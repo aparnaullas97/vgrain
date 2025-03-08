@@ -11,5 +11,6 @@
     "num_epochs": 600,
     "threshold": 0.7,
     "noise_factor": 0.0,
-    "tune_hyperparameters": false
+    "tune_hyperparameters": false,
+    "ground_truth_available": false
 }
