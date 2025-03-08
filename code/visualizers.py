@@ -90,3 +90,59 @@ def visualize_grn_with_hubs(predicted_adj_matrix, gene_names, hub_genes, thresho
     nx.draw(G, pos, with_labels=True, node_color=node_colors, node_size=500, font_size=8, edge_color="gray")
     plt.title("Predicted GRN with Hub Genes Highlighted")
     plt.show()
+
+
+def analyze_network_properties(predicted_adj_matrix, gene_names, threshold=0.6):
+    """
+    Build a NetworkX graph from the predicted adjacency matrix (using a specified threshold)
+    and compute global network properties, hub genes, and communities.
+    """
+    G = nx.Graph()
+    n = predicted_adj_matrix.shape[0]
+    for i in range(n):
+        for j in range(i + 1, n):
+            if predicted_adj_matrix[i, j] > threshold:
+                G.add_edge(gene_names[i], gene_names[j], weight=predicted_adj_matrix[i, j])
+    density = nx.density(G)
+    avg_clustering = nx.average_clustering(G)
+    degree_cent = nx.degree_centrality(G)
+    sorted_hubs = sorted(degree_cent.items(), key=lambda x: x[1], reverse=True)
+    top_hubs = sorted_hubs[:10]
+
+    print("\n--- Downstream Network Analysis ---")
+    print("Network Density:", density)
+    print("Average Clustering Coefficient:", avg_clustering)
+    print("\nTop 10 Hub Genes (by degree centrality):")
+    for gene, cent in top_hubs:
+        print(f"{gene}: {cent:.4f}")
+
+    # Community detection using the Girvan-Newman algorithm
+    from networkx.algorithms.community import girvan_newman
+    communities_generator = girvan_newman(G)
+    top_level_communities = next(communities_generator)
+    communities = sorted(map(sorted, top_level_communities))
+    print("\nDetected Communities (Girvan-Newman):")
+    for idx, community in enumerate(communities):
+        print(f"Community {idx + 1}: {community}")
+
+    # Degree centrality
+    degree_cent = nx.degree_centrality(G)
+    # Betweenness centrality
+    betweenness_cent = nx.betweenness_centrality(G)
+    # Closeness centrality
+    closeness_cent = nx.closeness_centrality(G)
+    # Eigenvector centrality
+    eigenvector_cent = nx.eigenvector_centrality(G)
+
+    # Get the top 10 genes for each measure
+    top_degree = sorted(degree_cent.items(), key=lambda x: x[1], reverse=True)[:10]
+    top_betweenness = sorted(betweenness_cent.items(), key=lambda x: x[1], reverse=True)[:10]
+    top_closeness = sorted(closeness_cent.items(), key=lambda x: x[1], reverse=True)[:10]
+    top_eigenvector = sorted(eigenvector_cent.items(), key=lambda x: x[1], reverse=True)[:10]
+
+    print("Top 10 Degree Centrality:", top_degree)
+    print("Top 10 Betweenness Centrality:", top_betweenness)
+    print("Top 10 Closeness Centrality:", top_closeness)
+    print("Top 10 Eigenvector Centrality:", top_eigenvector)
+
+    return G
