@@ -36,6 +36,7 @@ NETWORK_FILE = config['network_file']
 DATASET = config['dataset']
 
 K_FRACTION = config.get('k_fraction', 0.1)
+GROUND_TRUTH_AVAILABLE = config.get("ground_truth_available", True)
 
 
 
@@ -143,10 +144,17 @@ def train_and_evaluate(model, edge_index, expr_tensor, adj_matrix_tensor, true_a
 
         if (epoch + 1) % 10 == 0:
             reconstructed = model(edge_index, expr_tensor).detach().cpu().numpy()
-            roc_auc, prec, rec, f1, epr, acc, num_gt_edges, n, overlap_count = evaluate_model(true_adj_matrix,
-                                                                                              reconstructed)
-            epr = calculate_early_precision_rate(reconstructed, true_adj_matrix)
-            print(f"Epoch {epoch + 1}/{num_epochs}, ROC-AUC: {roc_auc:.4f}, Precision: {prec:.4f}, "
-                  f"Recall: {rec:.4f}, F1: {f1:.4f}, EPR: {epr:.4f}, acc: {acc:.4f}")
-            log_run_info(run_id, num_neurons, embedding_size, lr, heads,
-                         roc_auc, prec, rec, f1, epr, acc, num_gt_edges, n, overlap_count, DATASET)
+            if GROUND_TRUTH_AVAILABLE:
+                # Evaluate using ground truth
+                roc_auc, prec, rec, f1, epr, acc, num_gt_edges, n, overlap_count = evaluate_model(true_adj_matrix,
+                                                                                                  reconstructed)
+                print(f"Epoch {epoch + 1}/{num_epochs}, ROC-AUC: {roc_auc:.4f}, Precision: {prec:.4f}, "
+                      f"Recall: {rec:.4f}, F1: {f1:.4f}, EPR: {epr:.4f}, Acc: {acc:.4f}")
+                current_metric = epr  # Or any other metric you wish to monitor
+                log_run_info(run_id, num_neurons, embedding_size, lr, heads,
+                             roc_auc, prec, rec, f1, epr, acc, num_gt_edges, n, overlap_count, DATASET)
+            else:
+                # When no ground truth is available, report only reconstruction loss
+                reconstruction_loss = total_loss.item()
+                print(f"Epoch {epoch + 1}/{num_epochs}, Reconstruction Loss: {reconstruction_loss:.4f}")
+                current_metric = -reconstruction_loss  # Lower loss is better
