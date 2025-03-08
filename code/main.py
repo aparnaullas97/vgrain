@@ -12,11 +12,13 @@ import torch
 from optuna.samplers import GridSampler
 from sklearn.metrics import accuracy_score
 
+from visualizers import analyze_network_properties
 from evaluators import train_and_evaluate, calculate_early_precision_rate, calculate_whole_network_overlap, evaluate_model
 
 from loggers import log_run_info
 from preprocessors import preprocess_data, construct_adjacency_matrix_with_noise, create_true_adjacency_matrix, construct_adjacency_matrix
 from model import GAT_VGAE
+import torch.nn.functional as F
 
 #######################################
 #         Global Variables            #
@@ -48,6 +50,7 @@ DROPOUT = config.get('dropout', 0.2)
 K_FRACTION = config.get('k_fraction', 0.1)  # Used in EPR calculation
 
 TUNE_HYPERPARAMETERS = config['tune_hyperparameters']
+GROUND_TRUTH_AVAILABLE = config.get("ground_truth_available", True)
 
 
 def objective(trial):
@@ -64,8 +67,10 @@ def objective(trial):
     expr_tensor = torch.FloatTensor(expr_data)
     edge_index = torch.tensor(np.array(np.where(adj_matrix == 1)), dtype=torch.long)
     adj_matrix_tensor = torch.FloatTensor(adj_matrix)
-    true_adj_matrix = create_true_adjacency_matrix(NETWORK_FILE, gene_names)
-
+    if GROUND_TRUTH_AVAILABLE:
+        true_adj_matrix = create_true_adjacency_matrix(NETWORK_FILE, gene_names)
+    else:
+        true_adj_matrix = None
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     edge_index = edge_index.to(device)
     expr_tensor = expr_tensor.to(device)
@@ -85,14 +90,20 @@ def objective(trial):
                        heads=num_heads)
 
     reconstructed_adjacency_eval = model(edge_index, expr_tensor).detach().cpu().numpy()
-    roc_auc_eval, prec, rec, f1, epr, acc, num_gt_edges, n, overlap_count = evaluate_model(true_adj_matrix,
-                                                                                           reconstructed_adjacency_eval)
+    if GROUND_TRUTH_AVAILABLE:
+        roc_auc_eval, prec, rec, f1, epr, acc, num_gt_edges, n, overlap_count = evaluate_model(true_adj_matrix,
+                                                                                               reconstructed_adjacency_eval)
 
-    print(f"Trial {trial.number} completed with ROC-AUC: {roc_auc_eval:.4f}")
-    log_run_info(run_id, num_neurons, embedding_size, learning_rate, num_heads,
-                 roc_auc_eval, prec, rec, f1, epr, acc, num_gt_edges, n, overlap_count, DATASET)
+        print(f"Trial {trial.number} completed with ROC-AUC: {roc_auc_eval:.4f}")
+        log_run_info(run_id, num_neurons, embedding_size, learning_rate, num_heads,
+                     roc_auc_eval, prec, rec, f1, epr, acc, num_gt_edges, n, overlap_count, DATASET)
+        return epr
+    else:
+        # Use negative reconstruction loss as the objective (lower loss is better)
+        reconstructed_tensor = torch.FloatTensor(reconstructed_adjacency_eval).view(-1)
+        reconstruction_loss = F.binary_cross_entropy(reconstructed_tensor, adj_matrix_tensor.view(-1)).item()
+        return -reconstruction_loss
 
-    return roc_auc_eval
 
 
 #######################################
@@ -129,8 +140,10 @@ if __name__ == "__main__":
         expr_tensor = torch.FloatTensor(expr_data)
         edge_index = torch.tensor(np.array(np.where(adj_matrix == 1)), dtype=torch.long)
         adj_matrix_tensor = torch.FloatTensor(adj_matrix)
-        true_adj_matrix = create_true_adjacency_matrix(NETWORK_FILE, gene_names)
-
+        if GROUND_TRUTH_AVAILABLE:
+            true_adj_matrix = create_true_adjacency_matrix(NETWORK_FILE, gene_names)
+        else:
+            true_adj_matrix = None
         # --- Model Setup ---
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         edge_index = edge_index.to(device)
@@ -163,59 +176,31 @@ if __name__ == "__main__":
 
         # --- Final Evaluation ---
         reconstructed_adjacency = model(edge_index, expr_tensor).detach().cpu().numpy()
-        roc_auc, prec, rec, f1, epr, acc, num_gt_edges, n, overlap_count = evaluate_model(true_adj_matrix,
-                                                                                          reconstructed_adjacency)
+        if GROUND_TRUTH_AVAILABLE:
+            roc_auc, prec, rec, f1, epr, acc, num_gt_edges, n, overlap_count = evaluate_model(true_adj_matrix,
+                                                                                              reconstructed_adjacency)
 
-        # Compute accuracy by thresholding at 0.5
-        true_flat = true_adj_matrix.values.flatten()
-        pred_flat = reconstructed_adjacency.flatten()
-        accuracy = accuracy_score(true_flat, (pred_flat > 0.5).astype(int))
+            # Compute accuracy by thresholding at 0.5
+            true_flat = true_adj_matrix.values.flatten()
+            pred_flat = reconstructed_adjacency.flatten()
+            accuracy = accuracy_score(true_flat, (pred_flat > 0.5).astype(int))
 
-        # Compute EPR with the existing function
-        epr_final = calculate_early_precision_rate(reconstructed_adjacency, true_adj_matrix)
+            # Compute EPR with the existing function
+            epr_final = calculate_early_precision_rate(reconstructed_adjacency, true_adj_matrix)
 
-        print(f"\nFinal ROC-AUC: {roc_auc:.4f}, Precision: {prec:.4f}, Recall: {rec:.4f}, F1: {f1:.4f}, "
-              f"Accuracy: {accuracy:.4f}, EPR: {epr_final:.4f}")
+            print(f"\nFinal ROC-AUC: {roc_auc:.4f}, Precision: {prec:.4f}, Recall: {rec:.4f}, F1: {f1:.4f}, "
+                  f"Accuracy: {accuracy:.4f}, EPR: {epr_final:.4f}")
+            print(f"\nNumber of ground truth unique edges (from network file): {num_gt_edges}")
+            print(f"Number of overlapping edges in top 20% predictions: {overlap_count}")
+        else:
+            # Without ground truth, simply report reconstruction loss
+            reconstructed_tensor = torch.FloatTensor(reconstructed_adjacency).view(-1)
+            reconstruction_loss = F.binary_cross_entropy(reconstructed_tensor, adj_matrix_tensor.view(-1)).item()
+            print(f"\nFinal Reconstruction Loss: {reconstruction_loss:.4f}")
 
-        # plot_precision_recall_curve(true_adj_matrix, reconstructed_adjacency)
-
-        ###################################
-        #      Unique Edge Analysis       #
-        ###################################
-        # gt_df = pd.read_csv(NETWORK_FILE)
-        # num_gt_edges = len(gt_df)
-        print(f"\nNumber of ground truth unique edges (from network file): {num_gt_edges}")
-
-        ###################################
-        #      Simplified Top-20% Analysis
-        ###################################
-        # n = reconstructed_adjacency.shape[0]
-        # predicted_edges = [
-        #     (i, j, reconstructed_adjacency[i, j])
-        #     for i in range(n) for j in range(i + 1, n)
-        #     if reconstructed_adjacency[i, j] > 0.3
-        # ]
-        # predicted_edges.sort(key=lambda x: x[2], reverse=True)
-        # top_percentage = 0.2
-        # num_top_edges = int(len(predicted_edges) * top_percentage)
-        # top_predicted_edges = predicted_edges[:num_top_edges]
-        # overlap_count = sum(1 for i, j, score in top_predicted_edges if true_adj_matrix.values[i, j] == 1)
-
-        print(f"Number of overlapping edges in top 20% predictions: {overlap_count}")
-
-        # Assuming `pcc_matrix` is your Pearson Correlation Coefficient adjacency matrix
-        pcc_matrix = construct_adjacency_matrix(expr_data, threshold=THRESHOLD)
-
-        # Run the comparison
-        pcc_overlap, pred_overlap = calculate_whole_network_overlap(reconstructed_adjacency, true_adj_matrix,
-                                                                    pcc_matrix)
-
-        ###################################
-        #      Visualization Calls        #
-        ###################################
-        # visualize_grn(reconstructed_adjacency, gene_names)
-        # visualize_embeddings(model, expr_tensor, edge_index, method="tsne")
-        # hub_genes = identify_hub_genes(reconstructed_adjacency, gene_names, top_k=10, threshold=0.5)
-        # visualize_grn_with_hubs(reconstructed_adjacency, gene_names, hub_genes, threshold=0.5)
+        # --- Downstream Network Analysis ---
+        # Regardless of ground truth, you can analyze the predicted network
+        print("\nPerforming downstream network analysis on the predicted network:")
+        predicted_network = analyze_network_properties(reconstructed_adjacency, gene_names, threshold=0.6)
 
 os.system("afplay /System/Library/Sounds/Glass.aiff")
