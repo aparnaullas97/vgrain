@@ -132,7 +132,8 @@ def analyze_network_properties(predicted_adj_matrix, gene_names, threshold=0.6):
     # Closeness centrality
     closeness_cent = nx.closeness_centrality(G)
     # Eigenvector centrality
-    eigenvector_cent = nx.eigenvector_centrality(G)
+    eigenvector_cent = nx.eigenvector_centrality(G, max_iter=1000)
+
 
     # Get the top 10 genes for each measure
     top_degree = sorted(degree_cent.items(), key=lambda x: x[1], reverse=True)[:10]
