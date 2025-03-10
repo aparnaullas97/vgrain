@@ -1,15 +1,8 @@
 #######################################
 #         Evaluation Functions        #
 #######################################
-# def evaluate_model(true_adj_matrix, reconstructed_adjacency):
-#     true_flat = true_adj_matrix.values.flatten()
-#     pred_flat = reconstructed_adjacency.flatten()
-#     roc_auc = roc_auc_score(true_flat, pred_flat)
-#     precision_val = precision_score(true_flat, pred_flat > 0.5)
-#     recall_val = recall_score(true_flat, pred_flat > 0.5)
-#     f1 = f1_score(true_flat, pred_flat > 0.5)
-#     return roc_auc, precision_val, recall_val, f1
 import json
+import os
 import uuid
 
 import numpy as np
@@ -20,15 +13,17 @@ from sklearn.metrics import roc_auc_score, precision_score, recall_score, f1_sco
 from loggers import log_epoch_info, log_run_info
 import torch.nn.functional as F
 
-
 #######################################
 #         Global Variables            #
 #######################################
 # Unique Run ID
 run_id = str(uuid.uuid4())
 
-# Load configuration from file
-with open('config.json', 'r') as config_file:
+script_dir = os.path.dirname(os.path.abspath(__file__))
+config_path = os.path.join(script_dir, "config.json")
+
+# Open the file using the absolute path
+with open(config_path, "r") as config_file:
     config = json.load(config_file)
 
 # File paths and hyperparameters from config
@@ -37,7 +32,6 @@ DATASET = config['dataset']
 
 K_FRACTION = config.get('k_fraction', 0.1)
 GROUND_TRUTH_AVAILABLE = config.get("ground_truth_available", True)
-
 
 
 def evaluate_model(true_adj_matrix, reconstructed_adjacency):
@@ -157,4 +151,3 @@ def train_and_evaluate(model, edge_index, expr_tensor, adj_matrix_tensor, true_a
                 # When no ground truth is available, report only reconstruction loss
                 reconstruction_loss = total_loss.item()
                 print(f"Epoch {epoch + 1}/{num_epochs}, Reconstruction Loss: {reconstruction_loss:.4f}")
-                current_metric = -reconstruction_loss  # Lower loss is better
