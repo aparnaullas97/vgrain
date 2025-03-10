@@ -12,8 +12,12 @@ import uuid
 # Unique Run ID
 run_id = str(uuid.uuid4())
 
-# Load configuration from file
-with open('config.json', 'r') as config_file:
+
+script_dir = os.path.dirname(os.path.abspath(__file__))
+config_path = os.path.join(script_dir, "config.json")
+
+# Open the file using the absolute path
+with open(config_path, "r") as config_file:
     config = json.load(config_file)
 
 # File paths and hyperparameters from config
