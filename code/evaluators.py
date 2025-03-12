@@ -49,10 +49,8 @@ def evaluate_model(true_adj_matrix, reconstructed_adjacency):
     recall = recall_score(true_flat, pred_binary)
     f1 = f1_score(true_flat, pred_binary)
 
-    # Edge Prediction Rate (EPR)
-    true_edges = true_flat.sum()
-    correct_predictions = np.sum(pred_binary & (true_flat == 1))
-    edge_prediction_rate = correct_predictions / true_edges if true_edges > 0 else 0
+    # Early Precision Rate (EPR)
+    early_precision_rate = calculate_early_precision_rate(reconstructed_adjacency, true_adj_matrix, K_FRACTION)
 
     # Overall Accuracy
     true_positives = np.sum((pred_binary == 1) & (true_flat == 1))
@@ -74,10 +72,7 @@ def evaluate_model(true_adj_matrix, reconstructed_adjacency):
     top_predicted_edges = predicted_edges[:num_top_edges]
     overlap_count = sum(1 for i, j, score in top_predicted_edges if true_adj_matrix.values[i, j] == 1)
 
-    print(f"\nNumber of top 20% predicted unique edges: {len(top_predicted_edges)}")
-    print(f"Number of overlapping edges in top 20% predictions: {overlap_count}")
-
-    return roc_auc, precision, recall, f1, edge_prediction_rate, accuracy, num_gt_edges, n, overlap_count
+    return roc_auc, precision, recall, f1, early_precision_rate, accuracy, num_gt_edges, n, overlap_count
 
 
 def calculate_early_precision_rate(predicted_adj_matrix, true_adj_matrix, k_fraction=K_FRACTION):
