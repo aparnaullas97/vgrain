@@ -21,7 +21,7 @@ dir.create(gex.dir, recursive = TRUE, showWarnings = FALSE)
 # Load CoLlecTRI network data
 collectri_data <- fread(collectri, sep = "\t", header = TRUE)
 if (!all(colnames(collectri_data) %in% c("source", "target"))) {
-  stop("⚠️ Column names in CoLlecTRI file are incorrect. They should be 'source' and 'target'.")
+  stop("Column names in CoLlecTRI file are incorrect. They should be 'source' and 'target'.")
 }
 
 ###############################
@@ -29,9 +29,9 @@ if (!all(colnames(collectri_data) %in% c("source", "target"))) {
 ###############################
 clustered_networks <- clusterNetwork(collectri_data, min_nodes = 50, max_nodes = 200)
 if (!is.list(clustered_networks) || length(clustered_networks) == 0) {
-  stop("⚠️ No clustered networks were generated!")
+  stop("No clustered networks were generated!")
 }
-cat("✅ Successfully clustered", length(clustered_networks), "networks\n")
+cat("Successfully clustered", length(clustered_networks), "networks\n")
 
 selected_cluster <- clustered_networks[[12]]
 
